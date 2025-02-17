@@ -1,0 +1,115 @@
+from pynput import mouse, keyboard
+import time
+from datetime import datetime
+import threading
+
+class InteractionRecorder:
+    """Records mouse and keyboard interactions using pynput"""
+    def __init__(self):
+        self.interactions = []
+        self.mouse_positions = []
+        self.last_mouse_time = time.time()
+        self.mouse_sample_rate = 0.05  # 50ms
+        self.recording = False
+        self.mouse_listener = None
+        self.keyboard_listener = None
+
+    def start_recording(self):
+        self.recording = True
+        self.interactions = []
+        self.mouse_positions = []
+        
+        # Start mouse listener
+        self.mouse_listener = mouse.Listener(
+            on_move=self._on_move,
+            on_click=self._on_click,
+            on_scroll=self._on_scroll
+        )
+        self.mouse_listener.start()
+        
+        # Start keyboard listener
+        self.keyboard_listener = keyboard.Listener(
+            on_press=self._on_press
+        )
+        self.keyboard_listener.start()
+
+    def stop_recording(self):
+        self.recording = False
+        if self.mouse_listener:
+            self.mouse_listener.stop()
+        if self.keyboard_listener:
+            self.keyboard_listener.stop()
+
+    def _on_move(self, x, y):
+        if not self.recording:
+            return
+            
+        current_time = time.time()
+        if current_time - self.last_mouse_time >= self.mouse_sample_rate:
+            self.mouse_positions.append({
+                "timestamp": datetime.now().isoformat(),
+                "type": "mouse_move",
+                "position": {"x": x, "y": y}
+            })
+            self.last_mouse_time = current_time
+
+    def _on_click(self, x, y, button, pressed):
+        if not self.recording:
+            return
+            
+        self.interactions.append({
+            "timestamp": datetime.now().isoformat(),
+            "type": "mouse_" + ("down" if pressed else "up"),
+            "button": str(button),
+            "position": {"x": x, "y": y}
+        })
+
+    def _on_scroll(self, x, y, dx, dy):
+        if not self.recording:
+            return
+            
+        self.interactions.append({
+            "timestamp": datetime.now().isoformat(),
+            "type": "scroll",
+            "direction": "down" if dy < 0 else "up",
+            "position": {"x": x, "y": y}
+        })
+
+    def _on_press(self, key):
+        if not self.recording:
+            return
+            
+        try:
+            key_name = key.char if hasattr(key, 'char') else str(key)
+            self.interactions.append({
+                "timestamp": datetime.now().isoformat(),
+                "type": "keypress",
+                "key": key_name
+            })
+        except AttributeError:
+            pass  # Special keys that don't have a char attribute
+
+    def save_interactions(self, filename):
+        try:
+            # Combine and sort all interactions
+            all_interactions = sorted(
+                self.interactions + self.mouse_positions,
+                key=lambda x: x['timestamp']
+            )
+            
+            data = {
+                "recording_data": {
+                    "start_time": all_interactions[0]["timestamp"] if all_interactions else None,
+                    "end_time": all_interactions[-1]["timestamp"] if all_interactions else None,
+                    "platform": platform.system(),
+                    "interactions": all_interactions
+                }
+            }
+            
+            with open(filename, 'w') as f:
+                json.dump(data, f, indent=2)
+            
+            return True
+        except Exception as e:
+            print(f"Error saving interactions: {e}")
+            return False
