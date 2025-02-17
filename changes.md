@@ -201,3 +201,63 @@ class AudioRecorder:
         except Exception as e:
             print(f"Error saving audio: {e}")
             return False
+
+def _save_video_with_audio(self, video_path, audio_path):
+        """Combine video frames with audio ensuring sync"""
+        try:
+            if not self.frames:
+                return False
+                
+            temp_video = str(video_path.with_suffix('.temp.mp4'))
+            
+            # Calculate actual achieved FPS
+            if len(self.frame_times) > 1:
+                actual_fps = len(self.frame_times) / (self.frame_times[-1] - self.frame_times[0])
+            else:
+                actual_fps = 30
+            
+            # Save video frames
+            height, width = self.frames[0].shape[:2]
+            out = cv2.VideoWriter(
+                temp_video,
+                cv2.VideoWriter_fourcc(*'mp4v'),
+                actual_fps,
+                (width, height)
+            )
+            
+            for frame in self.frames:
+                out.write(frame)
+            out.release()
+            
+            # Combine video and audio if audio exists
+            has_audio = os.path.exists(audio_path) and os.path.getsize(audio_path) > 0
+            
+            if has_audio:
+                try:
+                    command = [
+                        'ffmpeg', '-y',
+                        '-i', temp_video,
+                        '-i', audio_path,
+                        '-c:v', 'copy',
+                        '-c:a', 'aac',
+                        '-map', '0:v:0',
+                        '-map', '1:a:0',
+                        '-shortest',  # Use the shortest stream
+                        str(video_path)
+                    ]
+                    subprocess.run(command, check=True, capture_output=True)
+                    os.remove(temp_video)
+                except Exception as e:
+                    print(f"Error combining audio and video: {e}")
+                    # Fallback to video only
+                    os.rename(temp_video, video_path)
+            else:
+                # Just use the video without audio
+                os.rename(temp_video, video_path)
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error saving video with audio: {e}")
+            return False
+            
