@@ -1,0 +1,122 @@
+{
+  "recording_data": {
+    "start_time": "2025-02-17T09:31:24.693590",
+    "end_time": "2025-02-17T09:31:48.023735",
+    "total_frames": 133,
+    "platform": "Windows",
+    "interactions": [
+      {
+        "timestamp": "2025-02-17T09:31:24.693590",
+        "type": "click",
+        "button": "left",
+        "element": {
+          "class": "Chrome_WidgetWin_1",
+          "text": "TachyonCrew | Microsoft Teams - Google Chrome",
+          "window_handle": 66990,
+          "position": {
+            "x": 348,
+            "y": 78
+          }
+        }
+      },
+      {
+        "timestamp": "2025-02-17T09:31:28.593770",
+        "type": "click",
+        "button": "left",
+        "element": {
+          "class": "TrayNotifyWnd",
+          "text": "",
+          "window_handle": 197028,
+          "position": {
+            "x": 3110,
+            "y": 2359
+          }
+        }
+      },
+      {
+        "timestamp": "2025-02-17T09:31:32.494990",
+        "type": "click",
+        "button": "left",
+        "element": {
+          "class": "TrayNotifyWnd",
+          "text": "",
+          "window_handle": 197028,
+          "position": {
+            "x": 3097,
+            "y": 2347
+          }
+        }
+      },
+      {
+        "timestamp": "2025-02-17T09:31:34.113800",
+        "type": "click",
+        "button": "left",
+        "element": {
+          "class": "Chrome_RenderWidgetHostHWND",
+          "text": "Chrome Legacy Window",
+          "window_handle": 722418,
+          "position": {
+            "x": 2240,
+            "y": 1055
+          }
+        }
+      },
+      {
+        "timestamp": "2025-02-17T09:31:36.213556",
+        "type": "click",
+        "button": "left",
+        "element": {
+          "class": "Chrome_RenderWidgetHostHWND",
+          "text": "Chrome Legacy Window",
+          "window_handle": 722418,
+          "position": {
+            "x": 2441,
+            "y": 1093
+          }
+        }
+      },
+      {
+        "timestamp": "2025-02-17T09:31:45.365863",
+        "type": "click",
+        "button": "left",
+        "element": {
+          "class": "TrayNotifyWnd",
+          "text": "",
+          "window_handle": 197028,
+          "position": {
+            "x": 3134,
+            "y": 2368
+          }
+        }
+      },
+      {
+        "timestamp": "2025-02-17T09:31:46.750872",
+        "type": "click",
+        "button": "right",
+        "element": {
+          "class": "TopLevelWindowForOverflowXamlIsland",
+          "text": "System tray overflow window.",
+          "window_handle": 920284,
+          "position": {
+            "x": 3005,
+            "y": 2087
+          }
+        }
+      },
+      {
+        "timestamp": "2025-02-17T09:31:48.023735",
+        "type": "click",
+        "button": "left",
+        "element": {
+          "class": "#32768",
+          "text": "",
+          "window_handle": 918852,
+          "position": {
+            "x": 2896,
+            "y": 2052
+          }
+        }
+      }
+    ]
+  }
+}

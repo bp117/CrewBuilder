@@ -1,0 +1,18 @@
+# Core dependencies
+numpy>=1.21.0
+opencv-python>=4.5.3.56
+Pillow>=8.3.2
+pystray>=0.19.4
+sounddevice>=0.4.4
+mouse>=0.7.1
+keyboard>=0.13.5
+ffmpeg-python>=0.2.0
+
+# Windows-specific dependencies
+pywin32>=302; platform_system == "Windows"
+
+# macOS-specific dependencies
+pyobjc-framework-Quartz>=8.5; platform_system == "Darwin"
+pyobjc-framework-AVFoundation>=8.5; platform_system == "Darwin"
+pyobjc-framework-Cocoa>=8.5; platform_system == "Darwin"
+pyobjc-framework-ApplicationServices>=8.5; platform_system == "Darwin"
