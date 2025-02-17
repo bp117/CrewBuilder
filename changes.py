@@ -107,6 +107,115 @@ class CrossPlatformScreenRecorder:
                     pass
             
             return str(video_path), str(interactions_path)
+
+    #main.py
+
+    def start_recording(self):
+        """Start screen recording with error handling"""
+        try:
+            self.recording_active = True
+            self._recording_cleanup_done = False
+            
+            # Create recorder with audio disabled if on macOS
+            try:
+                if platform.system() == 'Darwin':
+                    os.environ['AUDIODEV'] = 'null'  # Disable audio on macOS
+                self.recorder = CrossPlatformScreenRecorder(self)
+            except Exception as e:
+                print(f"Error initializing recorder: {e}")
+                raise
+                
+            self.record_btn.config(state=tk.DISABLED)
+            self.stop_btn.config(state=tk.NORMAL)
+            
+            # Store window state before minimizing
+            self.store_window_state()
+            
+            # Create and show tray icon
+            try:
+                self.create_tray_icon()
+            except Exception as e:
+                print(f"Tray icon error (continuing anyway): {e}")
+                self.root.iconify()  # Fallback to minimizing window
+            
+            # Start the actual recording
+            try:
+                self.recorder.start_recording()
+            except Exception as e:
+                print(f"Error starting recording: {e}")
+                raise
+            
+        except Exception as e:
+            self.recording_active = False
+            self.record_btn.config(state=tk.NORMAL)
+            self.stop_btn.config(state=tk.DISABLED)
+            
+            # Clean up tray icon if it exists
+            if hasattr(self, 'tray_icon') and self.tray_icon:
+                try:
+                    self.tray_icon.stop()
+                except:
+                    pass
+                self.tray_icon = None
+            
+            # Show error but don't exit
+            messagebox.showerror("Error", f"Failed to start recording: {str(e)}\nTry again without audio recording.")
+            
+            # Restore window
+            self.restore_window_state()
+
+    def stop_recording(self):
+        """Stop screen recording with error handling"""
+        if not hasattr(self, 'recorder'):
+            return
+
+        try:
+            print("Stopping recording...")
+            self.recording_active = False
+            
+            self.stop_btn.config(state=tk.DISABLED)
+            self.record_btn.config(state=tk.DISABLED)
+            
+            self.root.config(cursor="wait")
+            
+            # Stop the tray icon
+            if hasattr(self, 'tray_icon') and self.tray_icon:
+                try:
+                    self.tray_icon.stop()
+                except:
+                    pass
+                self.tray_icon = None
+
+            try:
+                video_path, interactions_path = self.recorder.stop_recording()
+            except Exception as e:
+                print(f"Error stopping recorder: {e}")
+                raise
+            
+            if video_path and os.path.exists(video_path):
+                self.current_recording = video_path
+                self.current_interactions_path = interactions_path
+                
+                # Restore window first
+                self.restore_window_state()
+                
+                # Enable preview button
+                self.preview_btn.config(state=tk.NORMAL)
+                
+                messagebox.showinfo("Recording Complete", 
+                                  "Recording has been saved. Click 'Preview Recording' to view it.")
+            else:
+                raise Exception("Recording files were not saved properly")
+
+        except Exception as e:
+            print(f"Error in stop_recording: {str(e)}")
+            messagebox.showerror("Error", f"Failed to stop recording: {str(e)}")
+        finally:
+            self.root.config(cursor="")
+            self.record_btn.config(state=tk.NORMAL)
+            self.stop_btn.config(state=tk.DISABLED)
+            self.restore_window_state()
+            self._recording_cleanup_done = True
             
         except Exception as e:
             print(f"Error stopping recording: {e}")
