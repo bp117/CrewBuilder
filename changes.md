@@ -113,3 +113,91 @@ class InteractionRecorder:
         except Exception as e:
             print(f"Error saving interactions: {e}")
             return False
+
+
+class AudioRecorder:
+    """Handles audio recording functionality"""
+    def __init__(self):
+        self.audio_frames = []
+        self.recording = False
+        self.sample_rate = 44100
+        self.start_time = None
+        self.channels = 1  # Changed to mono recording
+        self.device_info = self._get_audio_device()
+
+    def _get_audio_device(self):
+        """Get the appropriate audio input device"""
+        try:
+            devices = sd.query_devices()
+            default_input = sd.query_devices(kind='input')
+            print("Available audio devices:", devices)
+            print("Default input device:", default_input)
+            return default_input
+        except Exception as e:
+            print(f"Error getting audio device: {e}")
+            return None
+
+    def start_recording(self):
+        self.recording = True
+        self.audio_frames = []
+        self.start_time = time.time()
+        
+        # Start audio recording thread
+        threading.Thread(target=self._record_audio, daemon=True).start()
+
+    def stop_recording(self):
+        self.recording = False
+
+    def _record_audio(self):
+        try:
+            if not self.device_info:
+                print("No audio device found")
+                return
+
+            # Configure audio stream
+            stream_config = {
+                'channels': self.channels,
+                'callback': self._audio_callback,
+                'samplerate': int(self.device_info['default_samplerate']),
+                'blocksize': int(self.device_info['default_samplerate'] / 10),  # 100ms blocks
+                'device': self.device_info['index']
+            }
+            
+            print("Starting audio recording with config:", stream_config)
+            
+            with sd.InputStream(**stream_config):
+                while self.recording:
+                    time.sleep(0.001)
+                    
+        except Exception as e:
+            print(f"Error recording audio: {e}")
+
+    def _audio_callback(self, indata, frames, time, status):
+        if status:
+            print("Audio status:", status)
+        if self.recording:
+            self.audio_frames.append(indata.copy())
+
+    def save_audio(self, filename):
+        if not self.audio_frames:
+            print("No audio frames to save")
+            return False
+            
+        try:
+            # Concatenate all audio frames
+            audio_data = np.concatenate(self.audio_frames, axis=0)
+            
+            # Ensure the data is in the correct format (float32)
+            audio_data = audio_data.astype(np.float32)
+            
+            # Normalize audio data to prevent clipping
+            max_val = np.max(np.abs(audio_data))
+            if max_val > 0:
+                audio_data = audio_data / max_val
+            
+            print(f"Saving audio with shape: {audio_data.shape}")
+            wavfile.write(filename, int(self.device_info['default_samplerate']), audio_data)
+            return True
+        except Exception as e:
+            print(f"Error saving audio: {e}")
+            return False
