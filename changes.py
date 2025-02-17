@@ -1,222 +1,272 @@
-class CrossPlatformScreenRecorder:
-    """Main screen recorder class that coordinates all recording functionality"""
-    def __init__(self, app_reference):
-        self.app = app_reference
+from pynput import mouse, keyboard
+import time
+from datetime import datetime
+import json
+import threading
+import platform
+from pathlib import Path
+
+class MacInteractionRecorder:
+    """macOS-specific mouse and keyboard interaction recorder"""
+    def __init__(self):
+        self.interactions = []
+        self.mouse_positions = []
+        self.last_mouse_time = time.time()
+        self.mouse_sample_rate = 0.05  # 50ms for mouse movement sampling
         self.recording = False
-        self.frames = []
-        self.frame_times = []
-        self.start_time = None
-        self.audio_enabled = not platform.system() == 'Darwin'  # Disable audio on macOS
         
-        # Initialize screen recorder
-        if platform.system() == 'Windows':
-            self.screen_recorder = WindowsScreenRecorder()
-        elif platform.system() == 'Darwin':
-            self.screen_recorder = MacScreenRecorder()
-        else:
-            raise NotImplementedError(f"Platform {platform.system()} not supported")
-            
-        # Initialize audio recorder only if enabled
-        if self.audio_enabled:
-            try:
-                self.audio_recorder = AudioRecorder()
-            except Exception as e:
-                print(f"Audio recording disabled due to error: {e}")
-                self.audio_enabled = False
-                self.audio_recorder = None
-        else:
-            self.audio_recorder = None
-            
-        # Initialize interaction recorder
-        self.interaction_recorder = InteractionRecorder()
+        # Initialize listeners
+        self.mouse_listener = None
+        self.keyboard_listener = None
         
-        # Create output directory
-        self.output_dir = Path("recordings")
-        self.output_dir.mkdir(exist_ok=True)
+        # Special keys mapping for macOS
+        self.special_keys = {
+            keyboard.Key.cmd: "command",
+            keyboard.Key.alt: "option",
+            keyboard.Key.shift: "shift",
+            keyboard.Key.ctrl: "control",
+            keyboard.Key.caps_lock: "caps_lock",
+            keyboard.Key.tab: "tab",
+            keyboard.Key.esc: "escape",
+            keyboard.Key.space: "space",
+            keyboard.Key.enter: "return",
+            keyboard.Key.backspace: "delete",
+            keyboard.Key.delete: "forward_delete",
+            keyboard.Key.right: "right_arrow",
+            keyboard.Key.left: "left_arrow",
+            keyboard.Key.up: "up_arrow",
+            keyboard.Key.down: "down_arrow",
+            keyboard.Key.page_up: "page_up",
+            keyboard.Key.page_down: "page_down",
+            keyboard.Key.home: "home",
+            keyboard.Key.end: "end"
+        }
+        
+        # Track modifier keys state
+        self.modifiers = {
+            "command": False,
+            "option": False,
+            "shift": False,
+            "control": False
+        }
 
     def start_recording(self):
-        """Start all recording processes"""
+        """Start recording mouse and keyboard interactions"""
         try:
             self.recording = True
-            self.frames = []
-            self.frame_times = []
-            self.start_time = time.time()
+            self.interactions = []
+            self.mouse_positions = []
             
-            # Start audio recording if enabled
-            if self.audio_enabled and self.audio_recorder:
-                try:
-                    self.audio_recorder.start_recording()
-                except Exception as e:
-                    print(f"Audio recording failed to start: {e}")
-                    self.audio_enabled = False
+            # Start mouse listener
+            self.mouse_listener = mouse.Listener(
+                on_move=self._on_move,
+                on_click=self._on_click,
+                on_scroll=self._on_scroll
+            )
+            self.mouse_listener.start()
             
-            # Start screen recording
-            threading.Thread(target=self._record_screen, daemon=True).start()
+            # Start keyboard listener
+            self.keyboard_listener = keyboard.Listener(
+                on_press=self._on_press,
+                on_release=self._on_release
+            )
+            self.keyboard_listener.start()
             
-            # Start interaction recording
-            self.interaction_recorder.start_recording()
+            print("Interaction recording started")
             
         except Exception as e:
-            print(f"Error starting recording: {e}")
-            self.stop_recording()
+            print(f"Error starting interaction recording: {e}")
+            self.recording = False
 
     def stop_recording(self):
-        """Stop all recording processes and save files"""
-        if not self.recording:
-            return None, None
-            
+        """Stop recording interactions"""
         try:
             self.recording = False
             
-            # Stop audio recording if enabled
-            if self.audio_enabled and self.audio_recorder:
-                try:
-                    self.audio_recorder.stop_recording()
-                except Exception as e:
-                    print(f"Error stopping audio: {e}")
-            
-            # Stop interaction recording
-            self.interaction_recorder.stop_recording()
-            
-            # Generate filenames
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            video_path = self.output_dir / f"recording_{timestamp}.mp4"
-            audio_path = self.output_dir / f"audio_{timestamp}.wav"
-            interactions_path = self.output_dir / f"interactions_{timestamp}.json"
-            
-            # Save interactions
-            self.interaction_recorder.save_interactions(interactions_path)
-            
-            # Save audio if enabled and available
-            audio_saved = False
-            if self.audio_enabled and self.audio_recorder:
-                try:
-                    audio_saved = self.audio_recorder.save_audio(audio_path)
-                except Exception as e:
-                    print(f"Error saving audio: {e}")
-                    audio_saved = False
-            
-            # Save video with or without audio
-            self._save_video_with_audio(video_path, audio_path if audio_saved else None)
-            
-            # Clean up audio file
-            if audio_saved and os.path.exists(audio_path):
-                try:
-                    os.remove(audio_path)
-                except:
-                    pass
-            
-            return str(video_path), str(interactions_path)
-
-    #main.py
-
-    def start_recording(self):
-        """Start screen recording with error handling"""
-        try:
-            self.recording_active = True
-            self._recording_cleanup_done = False
-            
-            # Create recorder with audio disabled if on macOS
-            try:
-                if platform.system() == 'Darwin':
-                    os.environ['AUDIODEV'] = 'null'  # Disable audio on macOS
-                self.recorder = CrossPlatformScreenRecorder(self)
-            except Exception as e:
-                print(f"Error initializing recorder: {e}")
-                raise
+            # Stop listeners
+            if self.mouse_listener:
+                self.mouse_listener.stop()
+                self.mouse_listener = None
                 
-            self.record_btn.config(state=tk.DISABLED)
-            self.stop_btn.config(state=tk.NORMAL)
-            
-            # Store window state before minimizing
-            self.store_window_state()
-            
-            # Create and show tray icon
-            try:
-                self.create_tray_icon()
-            except Exception as e:
-                print(f"Tray icon error (continuing anyway): {e}")
-                self.root.iconify()  # Fallback to minimizing window
-            
-            # Start the actual recording
-            try:
-                self.recorder.start_recording()
-            except Exception as e:
-                print(f"Error starting recording: {e}")
-                raise
+            if self.keyboard_listener:
+                self.keyboard_listener.stop()
+                self.keyboard_listener = None
+                
+            print("Interaction recording stopped")
             
         except Exception as e:
-            self.recording_active = False
-            self.record_btn.config(state=tk.NORMAL)
-            self.stop_btn.config(state=tk.DISABLED)
-            
-            # Clean up tray icon if it exists
-            if hasattr(self, 'tray_icon') and self.tray_icon:
-                try:
-                    self.tray_icon.stop()
-                except:
-                    pass
-                self.tray_icon = None
-            
-            # Show error but don't exit
-            messagebox.showerror("Error", f"Failed to start recording: {str(e)}\nTry again without audio recording.")
-            
-            # Restore window
-            self.restore_window_state()
+            print(f"Error stopping interaction recording: {e}")
 
-    def stop_recording(self):
-        """Stop screen recording with error handling"""
-        if not hasattr(self, 'recorder'):
+    def _get_modifier_state(self):
+        """Get current state of modifier keys"""
+        return {key: value for key, value in self.modifiers.items() if value}
+
+    def _on_move(self, x, y):
+        """Handle mouse movement events"""
+        if not self.recording:
             return
-
-        try:
-            print("Stopping recording...")
-            self.recording_active = False
             
-            self.stop_btn.config(state=tk.DISABLED)
-            self.record_btn.config(state=tk.DISABLED)
-            
-            self.root.config(cursor="wait")
-            
-            # Stop the tray icon
-            if hasattr(self, 'tray_icon') and self.tray_icon:
-                try:
-                    self.tray_icon.stop()
-                except:
-                    pass
-                self.tray_icon = None
-
+        current_time = time.time()
+        if current_time - self.last_mouse_time >= self.mouse_sample_rate:
             try:
-                video_path, interactions_path = self.recorder.stop_recording()
+                self.mouse_positions.append({
+                    "timestamp": datetime.now().isoformat(),
+                    "type": "mouse_move",
+                    "position": {"x": x, "y": y},
+                    "modifiers": self._get_modifier_state()
+                })
+                self.last_mouse_time = current_time
             except Exception as e:
-                print(f"Error stopping recorder: {e}")
-                raise
-            
-            if video_path and os.path.exists(video_path):
-                self.current_recording = video_path
-                self.current_interactions_path = interactions_path
-                
-                # Restore window first
-                self.restore_window_state()
-                
-                # Enable preview button
-                self.preview_btn.config(state=tk.NORMAL)
-                
-                messagebox.showinfo("Recording Complete", 
-                                  "Recording has been saved. Click 'Preview Recording' to view it.")
-            else:
-                raise Exception("Recording files were not saved properly")
+                print(f"Error recording mouse movement: {e}")
 
+    def _on_click(self, x, y, button, pressed):
+        """Handle mouse click events"""
+        if not self.recording:
+            return
+            
+        try:
+            # Convert button to string representation
+            if button == mouse.Button.left:
+                button_name = "left"
+            elif button == mouse.Button.right:
+                button_name = "right"
+            elif button == mouse.Button.middle:
+                button_name = "middle"
+            else:
+                button_name = str(button)
+            
+            self.interactions.append({
+                "timestamp": datetime.now().isoformat(),
+                "type": "mouse_" + ("down" if pressed else "up"),
+                "button": button_name,
+                "position": {"x": x, "y": y},
+                "modifiers": self._get_modifier_state()
+            })
         except Exception as e:
-            print(f"Error in stop_recording: {str(e)}")
-            messagebox.showerror("Error", f"Failed to stop recording: {str(e)}")
-        finally:
-            self.root.config(cursor="")
-            self.record_btn.config(state=tk.NORMAL)
-            self.stop_btn.config(state=tk.DISABLED)
-            self.restore_window_state()
-            self._recording_cleanup_done = True
+            print(f"Error recording mouse click: {e}")
+
+    def _on_scroll(self, x, y, dx, dy):
+        """Handle mouse scroll events"""
+        if not self.recording:
+            return
+            
+        try:
+            self.interactions.append({
+                "timestamp": datetime.now().isoformat(),
+                "type": "scroll",
+                "direction": "down" if dy < 0 else "up",
+                "position": {"x": x, "y": y},
+                "amount": abs(dy),
+                "modifiers": self._get_modifier_state()
+            })
+        except Exception as e:
+            print(f"Error recording scroll: {e}")
+
+    def _on_press(self, key):
+        """Handle key press events"""
+        if not self.recording:
+            return
+            
+        try:
+            # Handle modifier keys
+            if key in self.special_keys:
+                key_name = self.special_keys[key]
+                if key_name in self.modifiers:
+                    self.modifiers[key_name] = True
+            
+            # Get key name
+            if hasattr(key, 'char'):
+                key_name = key.char
+            else:
+                key_name = self.special_keys.get(key, str(key))
+            
+            self.interactions.append({
+                "timestamp": datetime.now().isoformat(),
+                "type": "keypress",
+                "key": key_name,
+                "modifiers": self._get_modifier_state()
+            })
+        except Exception as e:
+            print(f"Error recording key press: {e}")
+
+    def _on_release(self, key):
+        """Handle key release events"""
+        if not self.recording:
+            return
+            
+        try:
+            # Update modifier state
+            if key in self.special_keys:
+                key_name = self.special_keys[key]
+                if key_name in self.modifiers:
+                    self.modifiers[key_name] = False
+            
+            # Get key name
+            if hasattr(key, 'char'):
+                key_name = key.char
+            else:
+                key_name = self.special_keys.get(key, str(key))
+            
+            self.interactions.append({
+                "timestamp": datetime.now().isoformat(),
+                "type": "keyrelease",
+                "key": key_name,
+                "modifiers": self._get_modifier_state()
+            })
+        except Exception as e:
+            print(f"Error recording key release: {e}")
+
+    def save_interactions(self, filename):
+        """Save recorded interactions to a file"""
+        try:
+            # Combine and sort all interactions
+            all_interactions = sorted(
+                self.interactions + self.mouse_positions,
+                key=lambda x: x['timestamp']
+            )
+            
+            # Prepare output data
+            data = {
+                "recording_data": {
+                    "start_time": all_interactions[0]["timestamp"] if all_interactions else None,
+                    "end_time": all_interactions[-1]["timestamp"] if all_interactions else None,
+                    "platform": "macOS",
+                    "os_version": platform.mac_ver()[0],
+                    "total_events": len(all_interactions),
+                    "interactions": all_interactions
+                }
+            }
+            
+            # Create directory if it doesn't exist
+            output_path = Path(filename)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Save to file
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            
+            print(f"Interactions saved to: {filename}")
+            return True
             
         except Exception as e:
-            print(f"Error stopping recording: {e}")
-            return None, None
+            print(f"Error saving interactions: {e}")
+            return False
+
+    def get_statistics(self):
+        """Get statistics about recorded interactions"""
+        try:
+            mouse_clicks = len([x for x in self.interactions if x['type'].startswith('mouse_')])
+            key_presses = len([x for x in self.interactions if x['type'] == 'keypress'])
+            mouse_moves = len(self.mouse_positions)
+            scrolls = len([x for x in self.interactions if x['type'] == 'scroll'])
+            
+            return {
+                "total_events": len(self.interactions) + len(self.mouse_positions),
+                "mouse_clicks": mouse_clicks,
+                "key_presses": key_presses,
+                "mouse_moves": mouse_moves,
+                "scrolls": scrolls
+            }
+        except Exception as e:
+            print(f"Error getting statistics: {e}")
+            return None
