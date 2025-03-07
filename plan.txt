@@ -1,0 +1,29 @@
+Core Configuration (Green flow - Fully Promoted)
+
+All basic usecase information is preserved during promotion
+Includes name, description, line of business, task type, and metadata
+
+
+Model Configuration (Orange flow - Transformed)
+
+Most settings are preserved but with environment-specific transformations
+Critical transformation of GCP Project ID to match the target environment
+Chunking strategies maintained but adapted for the new environment
+
+
+Vector Database (Red flow - Not Promoted)
+
+Only the database schema/structure is promoted
+Actual data content stays in the Explore environment
+
+
+Source Data (Red flow - Not Promoted)
+
+Test data and source files remain in Explore environment
+Instead, minimal reference data is created in Main Lane Dev
+
+
+Prompt Templates (Green flow - Fully Promoted)
+
+Both system instructions and user prompts are completely preserved
+Ensures consistent AI behavior across environments
