@@ -1,0 +1,294 @@
+import sys
+import json
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem, 
+                            QVBoxLayout, QHBoxLayout, QPushButton, QWidget, QMenu,
+                            QAction, QDialog, QLabel, QLineEdit, QTextEdit, QFileDialog,
+                            QMessageBox)
+from PyQt5.QtCore import Qt, pyqtSlot
+
+
+class NodeEditDialog(QDialog):
+    """Dialog for adding or editing a node."""
+    
+    def __init__(self, parent=None, title="", description=""):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Node")
+        self.setMinimumWidth(400)
+        
+        layout = QVBoxLayout()
+        
+        # Title field
+        title_layout = QHBoxLayout()
+        title_layout.addWidget(QLabel("Title:"))
+        self.title_edit = QLineEdit(title)
+        title_layout.addWidget(self.title_edit)
+        layout.addLayout(title_layout)
+        
+        # Description field
+        desc_layout = QHBoxLayout()
+        desc_layout.addWidget(QLabel("Description:"))
+        self.desc_edit = QTextEdit()
+        self.desc_edit.setPlainText(description)
+        desc_layout.addWidget(self.desc_edit)
+        layout.addLayout(desc_layout)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        save_button = QPushButton("Save")
+        save_button.clicked.connect(self.accept)
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(save_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+        
+        self.setLayout(layout)
+    
+    def get_data(self):
+        """Return the dialog data."""
+        return {
+            "title": self.title_edit.text(),
+            "description": self.desc_edit.toPlainText()
+        }
+
+
+class JsonTreeEditor(QMainWindow):
+    """Main application window."""
+    
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("JSON Tree Editor")
+        self.resize(800, 600)
+        
+        self.current_file = None
+        self.json_data = {}
+        
+        self.setup_ui()
+    
+    def setup_ui(self):
+        """Set up the user interface."""
+        main_widget = QWidget()
+        main_layout = QVBoxLayout()
+        
+        # Tree widget
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["Title", "Description"])
+        self.tree.setColumnWidth(0, 250)
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self.show_context_menu)
+        self.tree.itemDoubleClicked.connect(self.edit_node)
+        main_layout.addWidget(self.tree)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        # File operations
+        new_button = QPushButton("New")
+        new_button.clicked.connect(self.new_file)
+        load_button = QPushButton("Load")
+        load_button.clicked.connect(self.load_file)
+        save_button = QPushButton("Save")
+        save_button.clicked.connect(self.save_file)
+        save_as_button = QPushButton("Save As")
+        save_as_button.clicked.connect(self.save_file_as)
+        
+        # Node operations
+        add_button = QPushButton("Add Node")
+        add_button.clicked.connect(self.add_root_node)
+        
+        button_layout.addWidget(new_button)
+        button_layout.addWidget(load_button)
+        button_layout.addWidget(save_button)
+        button_layout.addWidget(save_as_button)
+        button_layout.addWidget(add_button)
+        
+        main_layout.addLayout(button_layout)
+        main_widget.setLayout(main_layout)
+        self.setCentralWidget(main_widget)
+    
+    def tree_to_json(self):
+        """Convert the tree widget to JSON."""
+        result = []
+        
+        for i in range(self.tree.topLevelItemCount()):
+            top_item = self.tree.topLevelItem(i)
+            result.append(self.item_to_dict(top_item))
+        
+        return result
+    
+    def item_to_dict(self, item):
+        """Convert a tree item to a dictionary."""
+        node = {
+            "title": item.text(0),
+            "description": item.text(1)
+        }
+        
+        # Process child nodes if any
+        if item.childCount() > 0:
+            children = []
+            for i in range(item.childCount()):
+                child_item = item.child(i)
+                children.append(self.item_to_dict(child_item))
+            node["children"] = children
+        
+        return node
+    
+    def json_to_tree(self, data, parent=None):
+        """Load JSON data into the tree widget."""
+        for item_data in data:
+            if parent is None:
+                tree_item = QTreeWidgetItem(self.tree)
+            else:
+                tree_item = QTreeWidgetItem(parent)
+            
+            tree_item.setText(0, item_data.get("title", ""))
+            tree_item.setText(1, item_data.get("description", ""))
+            
+            # Process children recursively
+            if "children" in item_data and isinstance(item_data["children"], list):
+                self.json_to_tree(item_data["children"], tree_item)
+            
+            if parent is None:
+                self.tree.addTopLevelItem(tree_item)
+    
+    @pyqtSlot()
+    def new_file(self):
+        """Create a new file."""
+        self.tree.clear()
+        self.json_data = []
+        self.current_file = None
+        self.setWindowTitle("JSON Tree Editor - New File")
+    
+    @pyqtSlot()
+    def load_file(self):
+        """Load JSON from a file."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Open JSON File", "", "JSON Files (*.json);;All Files (*)"
+        )
+        
+        if file_path:
+            try:
+                with open(file_path, 'r') as file:
+                    data = json.load(file)
+                
+                self.tree.clear()
+                self.json_data = data
+                self.json_to_tree(data)
+                self.current_file = file_path
+                self.setWindowTitle(f"JSON Tree Editor - {file_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to load file: {str(e)}")
+    
+    @pyqtSlot()
+    def save_file(self):
+        """Save JSON to the current file."""
+        if self.current_file:
+            self.save_to_file(self.current_file)
+        else:
+            self.save_file_as()
+    
+    @pyqtSlot()
+    def save_file_as(self):
+        """Save JSON to a new file."""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save JSON File", "", "JSON Files (*.json);;All Files (*)"
+        )
+        
+        if file_path:
+            self.save_to_file(file_path)
+            self.current_file = file_path
+            self.setWindowTitle(f"JSON Tree Editor - {file_path}")
+    
+    def save_to_file(self, file_path):
+        """Save the current JSON data to a file."""
+        try:
+            data = self.tree_to_json()
+            with open(file_path, 'w') as file:
+                json.dump(data, file, indent=2)
+            QMessageBox.information(self, "Success", "File saved successfully")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save file: {str(e)}")
+    
+    @pyqtSlot()
+    def add_root_node(self):
+        """Add a top-level node."""
+        dialog = NodeEditDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            data = dialog.get_data()
+            item = QTreeWidgetItem(self.tree)
+            item.setText(0, data["title"])
+            item.setText(1, data["description"])
+            self.tree.addTopLevelItem(item)
+    
+    @pyqtSlot()
+    def add_child_node(self):
+        """Add a child node to the selected item."""
+        selected_items = self.tree.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "No item selected")
+            return
+        
+        dialog = NodeEditDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            data = dialog.get_data()
+            parent = selected_items[0]
+            child = QTreeWidgetItem()
+            child.setText(0, data["title"])
+            child.setText(1, data["description"])
+            parent.addChild(child)
+            parent.setExpanded(True)
+    
+    @pyqtSlot()
+    def edit_node(self, item=None, column=None):
+        """Edit the selected node."""
+        if item is None:
+            selected_items = self.tree.selectedItems()
+            if not selected_items:
+                QMessageBox.warning(self, "Warning", "No item selected")
+                return
+            item = selected_items[0]
+        
+        dialog = NodeEditDialog(self, item.text(0), item.text(1))
+        if dialog.exec_() == QDialog.Accepted:
+            data = dialog.get_data()
+            item.setText(0, data["title"])
+            item.setText(1, data["description"])
+    
+    @pyqtSlot()
+    def delete_node(self):
+        """Delete the selected node."""
+        selected_items = self.tree.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "No item selected")
+            return
+        
+        item = selected_items[0]
+        if item.parent():
+            item.parent().removeChild(item)
+        else:
+            index = self.tree.indexOfTopLevelItem(item)
+            self.tree.takeTopLevelItem(index)
+    
+    def show_context_menu(self, position):
+        """Show context menu for tree items."""
+        menu = QMenu()
+        add_action = QAction("Add Child", self)
+        edit_action = QAction("Edit", self)
+        delete_action = QAction("Delete", self)
+        
+        add_action.triggered.connect(self.add_child_node)
+        edit_action.triggered.connect(self.edit_node)
+        delete_action.triggered.connect(self.delete_node)
+        
+        menu.addAction(add_action)
+        menu.addAction(edit_action)
+        menu.addAction(delete_action)
+        
+        menu.exec_(self.tree.viewport().mapToGlobal(position))
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = JsonTreeEditor()
+    window.show()
+    sys.exit(app.exec_())
