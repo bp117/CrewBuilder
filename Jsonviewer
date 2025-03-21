@@ -1,0 +1,556 @@
+import sys
+import json
+import math
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QGraphicsView, QGraphicsScene,
+                            QGraphicsRectItem, QGraphicsTextItem, QGraphicsLineItem,
+                            QGraphicsPolygonItem, QVBoxLayout, QHBoxLayout, QPushButton, 
+                            QWidget, QMenu, QAction, QDialog, QLabel, QLineEdit, 
+                            QTextEdit, QFileDialog, QMessageBox, QGraphicsItem)
+from PyQt5.QtCore import Qt, pyqtSlot, QPointF, QRectF
+from PyQt5.QtGui import QColor, QPen, QBrush, QPolygonF, QFont
+
+
+class NodeEditDialog(QDialog):
+    """Dialog for adding or editing a node."""
+    
+    def __init__(self, parent=None, title="", description=""):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Node")
+        self.setMinimumWidth(400)
+        
+        layout = QVBoxLayout()
+        
+        # Title field
+        title_layout = QHBoxLayout()
+        title_layout.addWidget(QLabel("Title:"))
+        self.title_edit = QLineEdit(title)
+        title_layout.addWidget(self.title_edit)
+        layout.addLayout(title_layout)
+        
+        # Description field
+        desc_layout = QHBoxLayout()
+        desc_layout.addWidget(QLabel("Description:"))
+        self.desc_edit = QTextEdit()
+        self.desc_edit.setPlainText(description)
+        desc_layout.addWidget(self.desc_edit)
+        layout.addLayout(desc_layout)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        save_button = QPushButton("Save")
+        save_button.clicked.connect(self.accept)
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(save_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+        
+        self.setLayout(layout)
+    
+    def get_data(self):
+        """Return the dialog data."""
+        return {
+            "title": self.title_edit.text(),
+            "description": self.desc_edit.toPlainText()
+        }
+
+
+class NodeItem(QGraphicsRectItem):
+    """A node in the graph."""
+    
+    def __init__(self, title, description, x=0, y=0, width=200, height=80):
+        super().__init__(0, 0, width, height)
+        self.setPos(x, y)
+        self.setFlags(QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemIsMovable)
+        
+        # Basic node appearance
+        self.setBrush(QBrush(QColor(240, 240, 255)))
+        self.setPen(QPen(QColor(100, 100, 150), 2))
+        
+        # Title text
+        self.title_item = QGraphicsTextItem(self)
+        self.title_item.setPos(10, 5)
+        self.title_item.setFont(QFont("Arial", 10, QFont.Bold))
+        self.title_item.setPlainText(title)
+        
+        # Description text
+        self.desc_item = QGraphicsTextItem(self)
+        self.desc_item.setPos(10, 30)
+        self.desc_item.setFont(QFont("Arial", 9))
+        self.desc_item.setPlainText(description)
+        self.desc_item.setTextWidth(width - 20)
+        
+        # Store data
+        self.node_title = title
+        self.node_description = description
+        self.children = []
+        self.parent_node = None
+        self.arrows = []
+        
+    def set_data(self, title, description):
+        """Update node data."""
+        self.node_title = title
+        self.node_description = description
+        self.title_item.setPlainText(title)
+        self.desc_item.setPlainText(description)
+        
+    def add_child(self, child_node):
+        """Add a child node and create connection arrow."""
+        self.children.append(child_node)
+        child_node.parent_node = self
+        
+        # Create arrow
+        arrow = ArrowItem(self, child_node)
+        self.arrows.append(arrow)
+        return arrow
+
+    def remove_child(self, child_node):
+        """Remove a child node and its arrow."""
+        if child_node in self.children:
+            self.children.remove(child_node)
+            
+            # Remove arrows
+            for arrow in self.arrows[:]:
+                if arrow.end_node == child_node:
+                    self.arrows.remove(arrow)
+                    scene = arrow.scene()
+                    if scene:
+                        scene.removeItem(arrow)
+
+    def update_arrows(self):
+        """Update positions of all connected arrows."""
+        for arrow in self.arrows:
+            arrow.update_position()
+        
+        # Update incoming arrows if this is a child node
+        if self.parent_node:
+            for arrow in self.parent_node.arrows:
+                if arrow.end_node == self:
+                    arrow.update_position()
+                    
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release event to update arrows."""
+        super().mouseReleaseEvent(event)
+        self.update_arrows()
+
+
+class ArrowItem(QGraphicsLineItem):
+    """An arrow connecting two nodes."""
+    
+    def __init__(self, start_node, end_node):
+        super().__init__()
+        self.start_node = start_node
+        self.end_node = end_node
+        self.setPen(QPen(QColor(100, 100, 150), 2))
+        
+        # Create arrowhead
+        self.arrowhead = QGraphicsPolygonItem(self)
+        self.arrowhead.setBrush(QBrush(QColor(100, 100, 150)))
+        self.arrowhead.setPen(QPen(Qt.NoPen))
+        
+        self.update_position()
+        
+        # Add to the scene if nodes are already in a scene
+        scene = start_node.scene()
+        if scene:
+            scene.addItem(self)
+            
+    def update_position(self):
+        """Update the position and orientation of the arrow."""
+        if not self.start_node or not self.end_node:
+            return
+            
+        # Get the center of both nodes
+        start_rect = self.start_node.rect()
+        end_rect = self.end_node.rect()
+        
+        start_center = self.start_node.pos() + QPointF(start_rect.width()/2, start_rect.height()/2)
+        end_center = self.end_node.pos() + QPointF(end_rect.width()/2, end_rect.height()/2)
+        
+        # Calculate start and end points on the edges of the rectangles
+        line_vector = end_center - start_center
+        angle = math.atan2(line_vector.y(), line_vector.x())
+        
+        # Calculate the points where the line intersects the rectangles
+        start_point = start_center + QPointF(
+            math.cos(angle) * start_rect.width()/2,
+            math.sin(angle) * start_rect.height()/2
+        )
+        
+        end_point = end_center - QPointF(
+            math.cos(angle) * end_rect.width()/2,
+            math.sin(angle) * end_rect.height()/2
+        )
+        
+        # Set the line positions
+        self.setLine(start_point.x(), start_point.y(), end_point.x(), end_point.y())
+        
+        # Update arrowhead
+        arrowhead_size = 10
+        arrowhead_angle = math.pi / 6  # 30 degrees
+        
+        # Calculate the arrowhead points
+        p0 = QPointF(end_point)
+        p1 = QPointF(
+            end_point.x() - arrowhead_size * math.cos(angle - arrowhead_angle),
+            end_point.y() - arrowhead_size * math.sin(angle - arrowhead_angle)
+        )
+        p2 = QPointF(
+            end_point.x() - arrowhead_size * math.cos(angle + arrowhead_angle),
+            end_point.y() - arrowhead_size * math.sin(angle + arrowhead_angle)
+        )
+        
+        polygon = QPolygonF()
+        polygon.append(p0)
+        polygon.append(p1)
+        polygon.append(p2)
+        
+        self.arrowhead.setPolygon(polygon)
+
+
+class GraphScene(QGraphicsScene):
+    """Custom graphics scene for the node graph."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.nodes = []
+        self.setSceneRect(0, 0, 2000, 2000)
+        
+    def add_node(self, title, description, x=0, y=0):
+        """Add a new node to the scene."""
+        node = NodeItem(title, description, x, y)
+        self.addItem(node)
+        self.nodes.append(node)
+        return node
+        
+    def remove_node(self, node):
+        """Remove a node and its connections."""
+        # Remove child relationships
+        if node.parent_node:
+            node.parent_node.remove_child(node)
+            
+        # Remove this node as parent from all children
+        for child in node.children[:]:
+            node.remove_child(child)
+            
+        # Remove the node from the scene
+        self.removeItem(node)
+        self.nodes.remove(node)
+        
+    def clear_all(self):
+        """Clear all nodes and arrows."""
+        super().clear()
+        self.nodes = []
+
+
+class JsonGraphEditor(QMainWindow):
+    """Main application window."""
+    
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("JSON Graph Editor")
+        self.resize(1000, 800)
+        
+        self.current_file = None
+        self.json_data = {}
+        
+        self.setup_ui()
+        
+    def setup_ui(self):
+        """Set up the user interface."""
+        main_widget = QWidget()
+        main_layout = QVBoxLayout()
+        
+        # Graphics view
+        self.scene = GraphScene()
+        self.view = QGraphicsView(self.scene)
+        self.view.setRenderHint(QPainter.Antialiasing)
+        self.view.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.view.customContextMenuRequested.connect(self.show_context_menu)
+        main_layout.addWidget(self.view)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        # File operations
+        new_button = QPushButton("New")
+        new_button.clicked.connect(self.new_file)
+        load_button = QPushButton("Load")
+        load_button.clicked.connect(self.load_file)
+        save_button = QPushButton("Save")
+        save_button.clicked.connect(self.save_file)
+        save_as_button = QPushButton("Save As")
+        save_as_button.clicked.connect(self.save_file_as)
+        
+        # Node operations
+        add_button = QPushButton("Add Node")
+        add_button.clicked.connect(self.add_root_node)
+        
+        button_layout.addWidget(new_button)
+        button_layout.addWidget(load_button)
+        button_layout.addWidget(save_button)
+        button_layout.addWidget(save_as_button)
+        button_layout.addWidget(add_button)
+        
+        main_layout.addLayout(button_layout)
+        main_widget.setLayout(main_layout)
+        self.setCentralWidget(main_widget)
+        
+    def graph_to_json(self):
+        """Convert the graph to JSON."""
+        # Find all root nodes (nodes without parents)
+        root_nodes = [node for node in self.scene.nodes if node.parent_node is None]
+        result = []
+        
+        for node in root_nodes:
+            result.append(self.node_to_dict(node))
+        
+        return result
+        
+    def node_to_dict(self, node):
+        """Convert a node to a dictionary."""
+        node_dict = {
+            "title": node.node_title,
+            "description": node.node_description
+        }
+        
+        # Process children recursively
+        if node.children:
+            children = []
+            for child in node.children:
+                children.append(self.node_to_dict(child))
+            node_dict["children"] = children
+            
+        return node_dict
+        
+    def json_to_graph(self, data, parent_node=None, x=50, y=50, level=0):
+        """Load JSON data into the graph."""
+        horizontal_spacing = 250
+        vertical_spacing = 150
+        
+        nodes_added = []
+        
+        for i, item_data in enumerate(data):
+            # Calculate position based on level and index
+            node_x = x + i * horizontal_spacing
+            node_y = y + level * vertical_spacing
+            
+            # Create node
+            node = self.scene.add_node(
+                item_data.get("title", ""),
+                item_data.get("description", ""),
+                node_x, node_y
+            )
+            
+            nodes_added.append(node)
+            
+            # Connect to parent if exists
+            if parent_node:
+                arrow = parent_node.add_child(node)
+                self.scene.addItem(arrow)
+            
+            # Process children recursively
+            if "children" in item_data and isinstance(item_data["children"], list):
+                self.json_to_graph(
+                    item_data["children"],
+                    node,
+                    node_x - (len(item_data["children"]) - 1) * horizontal_spacing / 2,
+                    node_y + vertical_spacing,
+                    level + 1
+                )
+        
+        return nodes_added
+        
+    @pyqtSlot()
+    def new_file(self):
+        """Create a new file."""
+        self.scene.clear_all()
+        self.json_data = []
+        self.current_file = None
+        self.setWindowTitle("JSON Graph Editor - New File")
+    
+    @pyqtSlot()
+    def load_file(self):
+        """Load JSON from a file."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Open JSON File", "", "JSON Files (*.json);;All Files (*)"
+        )
+        
+        if file_path:
+            try:
+                with open(file_path, 'r') as file:
+                    data = json.load(file)
+                
+                self.scene.clear_all()
+                self.json_data = data
+                self.json_to_graph(data)
+                self.current_file = file_path
+                self.setWindowTitle(f"JSON Graph Editor - {file_path}")
+                
+                # Adjust view to see all items
+                self.view.fitInView(self.scene.itemsBoundingRect(), Qt.KeepAspectRatio)
+                
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to load file: {str(e)}")
+    
+    @pyqtSlot()
+    def save_file(self):
+        """Save JSON to the current file."""
+        if self.current_file:
+            self.save_to_file(self.current_file)
+        else:
+            self.save_file_as()
+    
+    @pyqtSlot()
+    def save_file_as(self):
+        """Save JSON to a new file."""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save JSON File", "", "JSON Files (*.json);;All Files (*)"
+        )
+        
+        if file_path:
+            self.save_to_file(file_path)
+            self.current_file = file_path
+            self.setWindowTitle(f"JSON Graph Editor - {file_path}")
+    
+    def save_to_file(self, file_path):
+        """Save the current JSON data to a file."""
+        try:
+            data = self.graph_to_json()
+            with open(file_path, 'w') as file:
+                json.dump(data, file, indent=2)
+            QMessageBox.information(self, "Success", "File saved successfully")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save file: {str(e)}")
+    
+    @pyqtSlot()
+    def add_root_node(self):
+        """Add a top-level node."""
+        dialog = NodeEditDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            data = dialog.get_data()
+            
+            # Find position for new node
+            x, y = 50, 50
+            if self.scene.nodes:
+                last_node = self.scene.nodes[-1]
+                x = last_node.pos().x() + 250
+                y = last_node.pos().y()
+                
+            self.scene.add_node(data["title"], data["description"], x, y)
+    
+    @pyqtSlot()
+    def add_child_node(self):
+        """Add a child node to the selected item."""
+        selected_items = self.scene.selectedItems()
+        selected_nodes = [item for item in selected_items if isinstance(item, NodeItem)]
+        
+        if not selected_nodes:
+            QMessageBox.warning(self, "Warning", "No node selected")
+            return
+        
+        parent_node = selected_nodes[0]
+        
+        dialog = NodeEditDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            data = dialog.get_data()
+            
+            # Calculate position for child (below parent)
+            parent_pos = parent_node.pos()
+            x = parent_pos.x()
+            y = parent_pos.y() + 150
+            
+            # If parent already has children, position to the right
+            if parent_node.children:
+                last_child = parent_node.children[-1]
+                x = last_child.pos().x() + 250
+            
+            # Create the node
+            child_node = self.scene.add_node(data["title"], data["description"], x, y)
+            
+            # Connect to parent
+            arrow = parent_node.add_child(child_node)
+            self.scene.addItem(arrow)
+    
+    @pyqtSlot()
+    def edit_node(self):
+        """Edit the selected node."""
+        selected_items = self.scene.selectedItems()
+        selected_nodes = [item for item in selected_items if isinstance(item, NodeItem)]
+        
+        if not selected_nodes:
+            QMessageBox.warning(self, "Warning", "No node selected")
+            return
+        
+        node = selected_nodes[0]
+        
+        dialog = NodeEditDialog(self, node.node_title, node.node_description)
+        if dialog.exec_() == QDialog.Accepted:
+            data = dialog.get_data()
+            node.set_data(data["title"], data["description"])
+    
+    @pyqtSlot()
+    def delete_node(self):
+        """Delete the selected node."""
+        selected_items = self.scene.selectedItems()
+        selected_nodes = [item for item in selected_items if isinstance(item, NodeItem)]
+        
+        if not selected_nodes:
+            QMessageBox.warning(self, "Warning", "No node selected")
+            return
+        
+        node = selected_nodes[0]
+        
+        # Ask for confirmation if the node has children
+        if node.children and QMessageBox.question(
+            self, "Confirm Deletion", 
+            "This node has children. Delete them too?",
+            QMessageBox.Yes | QMessageBox.No
+        ) == QMessageBox.No:
+            return
+            
+        self.scene.remove_node(node)
+    
+    def show_context_menu(self, position):
+        """Show context menu for graph items."""
+        scene_pos = self.view.mapToScene(position)
+        item = self.scene.itemAt(scene_pos, self.view.transform())
+        
+        if isinstance(item, NodeItem) or isinstance(item, QGraphicsTextItem) and isinstance(item.parentItem(), NodeItem):
+            # If we clicked on a text item, get its parent node
+            if isinstance(item, QGraphicsTextItem):
+                item = item.parentItem()
+                
+            # Select the node
+            item.setSelected(True)
+            
+            menu = QMenu()
+            add_action = QAction("Add Child", self)
+            edit_action = QAction("Edit", self)
+            delete_action = QAction("Delete", self)
+            
+            add_action.triggered.connect(self.add_child_node)
+            edit_action.triggered.connect(self.edit_node)
+            delete_action.triggered.connect(self.delete_node)
+            
+            menu.addAction(add_action)
+            menu.addAction(edit_action)
+            menu.addAction(delete_action)
+            
+            menu.exec_(self.view.mapToGlobal(position))
+        else:
+            # Background context menu
+            menu = QMenu()
+            add_action = QAction("Add Node", self)
+            add_action.triggered.connect(self.add_root_node)
+            menu.addAction(add_action)
+            
+            menu.exec_(self.view.mapToGlobal(position))
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    from PyQt5.QtGui import QPainter  # Adding this import for antialiasing
+    window = JsonGraphEditor()
+    window.show()
+    sys.exit(app.exec_())
